@@ -1,7 +1,7 @@
 module DnDList exposing (..)
 
 
-init : List a -> a -> Model a
+init : List a -> a -> Model a b
 init list defaultValue =
     Model
         (SelectionModel
@@ -10,13 +10,13 @@ init list defaultValue =
         defaultValue
 
 
-type alias Model a =
-    { body : ModelBody a
+type alias Model a b =
+    { body : ModelBody a b
     , defaultValue : a
     }
 
 
-type ModelBody a
+type ModelBody a b
     = SelectionModel
         { list : List a
         , selection : Selection
@@ -24,6 +24,7 @@ type ModelBody a
     | EditModel
         { first : List a
         , editing : a
+        , edition : b
         , last : List a
         }
 
@@ -33,15 +34,15 @@ type Selection
     | SingleSelection Int
 
 
-type Msg a
+type Msg a b
     = Deselect
     | SingleSelect Int
-    | Editing Int
-    | Edition a
-    | CommitEdit
+    | Editing (a -> b) Int
+    | Edition b
+    | CommitEdit (b -> Result String a)
 
 
-update : Msg a -> Model a -> Model a
+update : Msg a b -> Model a b -> Model a b
 update msg model =
     case model.body of
         SelectionModel selectionModel ->
@@ -52,8 +53,11 @@ update msg model =
                 SingleSelect i ->
                     applySingleSelect i model selectionModel.list
 
-                Editing i ->
-                    applyEditing i model selectionModel.list
+                Editing editionStart i ->
+                    applyEditing editionStart
+                        i
+                        model
+                        selectionModel.list
 
                 Edition value ->
                     applyEdition value model selectionModel.list
@@ -73,30 +77,47 @@ update msg model =
                         |> listFromEditModel
                         |> applySingleSelect i model
 
-                Editing i ->
+                Editing editionStart i ->
                     if List.length editModel.first == i then
                         model
                     else
                         editModel
                             |> listFromEditModel
-                            |> applyEditing i model
+                            |> applyEditing editionStart i model
 
                 Edition value ->
                     editModel
                         |> listFromEditModel
                         |> applyEdition value model
 
-                CommitEdit ->
-                    { model
-                        | body =
-                            SelectionModel
-                                { list = listFromEditModel editModel
-                                , selection = EmptySelection
+                CommitEdit toValue ->
+                    let
+                        newValue =
+                            toValue editModel.edition
+                    in
+                        case newValue of
+                            Err err ->
+                                { model
+                                    | body =
+                                        SelectionModel
+                                            { list = listFromEditModel editModel
+                                            , selection = EmptySelection
+                                            }
                                 }
-                    }
+
+                            Ok value ->
+                                { model
+                                    | body =
+                                        SelectionModel
+                                            { list =
+                                                editModel.first
+                                                    ++ (value :: editModel.last)
+                                            , selection = EmptySelection
+                                            }
+                                }
 
 
-applyDeselect : Model a -> List a -> Model a
+applyDeselect : Model a b -> List a -> Model a b
 applyDeselect model list =
     { model
         | body =
@@ -107,7 +128,7 @@ applyDeselect model list =
     }
 
 
-applySingleSelect : Int -> Model a -> List a -> Model a
+applySingleSelect : Int -> Model a b -> List a -> Model a b
 applySingleSelect i model list =
     if i >= 0 && i < List.length list then
         { model
@@ -121,38 +142,42 @@ applySingleSelect i model list =
         model
 
 
-applyEditing : Int -> Model a -> List a -> Model a
-applyEditing i model list =
-    { model
-        | body =
-            EditModel
-                { first = list |> List.take i
-                , editing =
-                    list
-                        |> List.drop i
-                        |> List.head
-                        |> Maybe.withDefault
-                            model.defaultValue
-                , last = list |> List.drop (i + 1)
-                }
-    }
+applyEditing : (a -> b) -> Int -> Model a b -> List a -> Model a b
+applyEditing editionStart i model list =
+    let
+        editing =
+            list
+                |> List.drop i
+                |> List.head
+                |> Maybe.withDefault
+                    model.defaultValue
+    in
+        { model
+            | body =
+                EditModel
+                    { first = list |> List.take i
+                    , editing = editing
+                    , edition = editionStart editing
+                    , last = list |> List.drop (i + 1)
+                    }
+        }
 
 
-applyEdition : a -> Model a -> List a -> Model a
+applyEdition : b -> Model a b -> List a -> Model a b
 applyEdition value model list =
     case model.body of
         EditModel editModel ->
             { model
                 | body =
                     EditModel
-                        { editModel | editing = value }
+                        { editModel | edition = value }
             }
 
         _ ->
             model
 
 
-list : Model a -> List a
+list : Model a b -> List a
 list model =
     case model.body of
         SelectionModel { list, selection } ->
@@ -166,7 +191,7 @@ listFromEditModel { first, editing, last } =
     first ++ (editing :: last)
 
 
-selection : Model a -> Selection
+selection : Model a b -> Selection
 selection model =
     case model.body of
         SelectionModel { selection } ->
@@ -186,14 +211,14 @@ inSelection selection i =
             i == j
 
 
-type alias ItemViewType a b =
-    { default : Int -> a -> b
-    , selected : Int -> a -> b
-    , editing : Int -> a -> b
+type alias ItemViewType a b c =
+    { default : Int -> a -> c
+    , selected : Int -> a -> c
+    , editing : b -> Int -> a -> c
     }
 
 
-view : ItemViewType a b -> Model a -> List b
+view : ItemViewType a b c -> Model a b -> List c
 view itemViewType model =
     case model.body of
         SelectionModel { list, selection } ->
@@ -210,6 +235,7 @@ view itemViewType model =
                 editing =
                     editModel.editing
                         |> itemViewType.editing
+                            editModel.edition
                             (List.length editModel.first)
 
                 last =

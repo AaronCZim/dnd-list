@@ -37,7 +37,7 @@ init3 =
 
 init3Model =
     Model
-        (DnDList.init [ "zero", "two", "three" ] "")
+        (DnDList.init [ "one", "two", "three" ] "")
         (DnDList.init [ 1, 2, 3 ] 0)
         Nothing
 
@@ -47,8 +47,8 @@ subscriptions model =
 
 
 type alias Model =
-    { strDnDList : DnDList.Model String
-    , intDnDList : DnDList.Model Int
+    { strDnDList : DnDList.Model String String
+    , intDnDList : DnDList.Model Int String
     , blockDeselect : Maybe ListType
     }
 
@@ -60,6 +60,7 @@ type Msg
     | Click ListType Int
     | Edit ListType Int
     | StrEdit String
+    | IntEdit String
 
 
 type ListType
@@ -116,10 +117,10 @@ update msg model =
                 ( { model
                     | strDnDList =
                         model.strDnDList
-                            |> DnDList.update DnDList.CommitEdit
+                            |> DnDList.update (DnDList.CommitEdit (\str -> Ok str))
                     , intDnDList =
                         model.intDnDList
-                            |> DnDList.update DnDList.CommitEdit
+                            |> DnDList.update (DnDList.CommitEdit String.toInt)
                   }
                 , Cmd.none
                 )
@@ -155,7 +156,8 @@ update msg model =
                         | blockDeselect = Just StrList
                         , strDnDList =
                             model.strDnDList
-                                |> DnDList.update (DnDList.Editing i)
+                                |> DnDList.update
+                                    (DnDList.Editing identity i)
                       }
                     , Cmd.none
                     )
@@ -165,7 +167,8 @@ update msg model =
                         | blockDeselect = Just IntList
                         , intDnDList =
                             model.intDnDList
-                                |> DnDList.update (DnDList.Editing i)
+                                |> DnDList.update
+                                    (DnDList.Editing toString i)
                       }
                     , Cmd.none
                     )
@@ -174,6 +177,15 @@ update msg model =
             ( { model
                 | strDnDList =
                     model.strDnDList
+                        |> DnDList.update (DnDList.Edition str)
+              }
+            , Cmd.none
+            )
+
+        IntEdit str ->
+            ( { model
+                | intDnDList =
+                    model.intDnDList
                         |> DnDList.update (DnDList.Edition str)
               }
             , Cmd.none
@@ -250,15 +262,15 @@ strItemActiveView i value =
         [ value |> text ]
 
 
-strItemEditView : Int -> String -> ListGroup.Item Msg
-strItemEditView i value =
+strItemEditView : String -> Int -> String -> ListGroup.Item Msg
+strItemEditView newValue i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (BlockDeselect StrList) |> onClick
             , StrEdit |> onInput
             ]
         ]
-        [ Input.text [ Input.value value ] ]
+        [ Input.text [ Input.value newValue ] ]
 
 
 intItemView : Int -> Int -> ListGroup.Item Msg
@@ -284,11 +296,12 @@ intItemActiveView i value =
         [ value |> toString |> text ]
 
 
-intItemEditView : Int -> Int -> ListGroup.Item Msg
-intItemEditView i value =
+intItemEditView : String -> Int -> Int -> ListGroup.Item Msg
+intItemEditView newValue i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (BlockDeselect IntList) |> onClick
+            , IntEdit |> onInput
             ]
         ]
-        [ Input.number [ value |> toString |> Input.value ] ]
+        [ Input.number [ newValue |> Input.value ] ]
