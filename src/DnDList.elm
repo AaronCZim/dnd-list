@@ -37,7 +37,8 @@ type Msg a
     = Deselect
     | SingleSelect Int
     | Editing Int
-    | Edit Int a
+    | Edition a
+    | CommitEdit
 
 
 update : Msg a -> Model a -> Model a
@@ -54,8 +55,11 @@ update msg model =
                 Editing i ->
                     applyEditing i model selectionModel.list
 
-                Edit i value ->
-                    applyEdit i value model selectionModel.list
+                Edition value ->
+                    applyEdition value model selectionModel.list
+
+                _ ->
+                    model
 
         EditModel editModel ->
             case msg of
@@ -77,16 +81,19 @@ update msg model =
                             |> listFromEditModel
                             |> applyEditing i model
 
-                Edit i value ->
-                    if List.length editModel.first == i then
-                        { model
-                            | body =
-                                EditModel { editModel | editing = value }
-                        }
-                    else
-                        editModel
-                            |> listFromEditModel
-                            |> applyEdit i value model
+                Edition value ->
+                    editModel
+                        |> listFromEditModel
+                        |> applyEdition value model
+
+                CommitEdit ->
+                    { model
+                        | body =
+                            SelectionModel
+                                { list = listFromEditModel editModel
+                                , selection = EmptySelection
+                                }
+                    }
 
 
 applyDeselect : Model a -> List a -> Model a
@@ -131,20 +138,18 @@ applyEditing i model list =
     }
 
 
-applyEdit : Int -> a -> Model a -> List a -> Model a
-applyEdit i value model list =
-    { model
-        | body =
-            EditModel
-                { first =
-                    list
-                        |> List.take i
-                , editing = value
-                , last =
-                    list
-                        |> List.drop (i + 1)
-                }
-    }
+applyEdition : a -> Model a -> List a -> Model a
+applyEdition value model list =
+    case model.body of
+        EditModel editModel ->
+            { model
+                | body =
+                    EditModel
+                        { editModel | editing = value }
+            }
+
+        _ ->
+            model
 
 
 list : Model a -> List a

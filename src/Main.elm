@@ -2,7 +2,7 @@ module Main exposing (..)
 
 import Html exposing (Html, text, hr, h1, h2, h3, h4, h5)
 import Html.Attributes exposing (style)
-import Html.Events exposing (onClick, onDoubleClick)
+import Html.Events exposing (onClick, onDoubleClick, onInput)
 import Bootstrap.CDN as CDN
 import Bootstrap.Grid as Grid
 import Bootstrap.Grid.Col as Col
@@ -10,25 +10,40 @@ import Bootstrap.Card as Card
 import Bootstrap.ListGroup as ListGroup
 import Bootstrap.Form.Input as Input
 import DnDList
+import Keyboard exposing (KeyCode)
+import Char
 
 
 main =
-    Html.beginnerProgram
-        { model = init3
+    Html.program
+        { init = init3
         , update = update
+        , subscriptions = subscriptions
         , view = view
         }
 
 
 init =
+    ( initModel, Cmd.none )
+
+
+initModel =
     Model (DnDList.init [] "") (DnDList.init [] 0) Nothing
 
 
 init3 =
+    ( init3Model, Cmd.none )
+
+
+init3Model =
     Model
         (DnDList.init [ "zero", "two", "three" ] "")
         (DnDList.init [ 1, 2, 3 ] 0)
         Nothing
+
+
+subscriptions model =
+    Keyboard.presses <| \key -> Keydown key
 
 
 type alias Model =
@@ -41,8 +56,10 @@ type alias Model =
 type Msg
     = Deselect
     | BlockDeselect ListType
+    | Keydown KeyCode
     | Click ListType Int
     | Edit ListType Int
+    | StrEdit String
 
 
 type ListType
@@ -50,6 +67,7 @@ type ListType
     | IntList
 
 
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Deselect ->
@@ -57,69 +75,109 @@ update msg model =
                 Just listType ->
                     case listType of
                         StrList ->
-                            { model
+                            ( { model
                                 | intDnDList =
                                     model.intDnDList
                                         |> DnDList.update DnDList.Deselect
                                 , blockDeselect = Nothing
-                            }
+                              }
+                            , Cmd.none
+                            )
 
                         IntList ->
-                            { model
+                            ( { model
                                 | strDnDList =
                                     model.strDnDList
                                         |> DnDList.update DnDList.Deselect
                                 , blockDeselect = Nothing
-                            }
+                              }
+                            , Cmd.none
+                            )
 
                 Nothing ->
-                    { model
+                    ( { model
                         | strDnDList =
                             model.strDnDList
                                 |> DnDList.update DnDList.Deselect
                         , intDnDList =
                             model.intDnDList
                                 |> DnDList.update DnDList.Deselect
-                    }
+                      }
+                    , Cmd.none
+                    )
 
         BlockDeselect listType ->
-            { model | blockDeselect = Just listType }
+            ( { model | blockDeselect = Just listType }
+            , Cmd.none
+            )
+
+        Keydown keyCode ->
+            if keyCode == 13 then
+                ( { model
+                    | strDnDList =
+                        model.strDnDList
+                            |> DnDList.update DnDList.CommitEdit
+                    , intDnDList =
+                        model.intDnDList
+                            |> DnDList.update DnDList.CommitEdit
+                  }
+                , Cmd.none
+                )
+            else
+                ( model, Cmd.none )
 
         Click listType i ->
             case listType of
                 StrList ->
-                    { model
+                    ( { model
                         | blockDeselect = Just StrList
                         , strDnDList =
                             model.strDnDList
                                 |> DnDList.update (DnDList.SingleSelect i)
-                    }
+                      }
+                    , Cmd.none
+                    )
 
                 IntList ->
-                    { model
+                    ( { model
                         | blockDeselect = Just IntList
                         , intDnDList =
                             model.intDnDList
                                 |> DnDList.update (DnDList.SingleSelect i)
-                    }
+                      }
+                    , Cmd.none
+                    )
 
         Edit listType i ->
             case listType of
                 StrList ->
-                    { model
+                    ( { model
                         | blockDeselect = Just StrList
                         , strDnDList =
                             model.strDnDList
                                 |> DnDList.update (DnDList.Editing i)
-                    }
+                      }
+                    , Cmd.none
+                    )
 
                 IntList ->
-                    { model
+                    ( { model
                         | blockDeselect = Just IntList
                         , intDnDList =
                             model.intDnDList
                                 |> DnDList.update (DnDList.Editing i)
-                    }
+                      }
+                    , Cmd.none
+                    )
+
+        StrEdit str ->
+            ( { model
+                | strDnDList =
+                    model.strDnDList
+                        |> DnDList.update (DnDList.Edition str)
+              }
+            , Cmd.none
+            )
 
 
 view : Model -> Html Msg
@@ -195,7 +253,11 @@ strItemActiveView i value =
 strItemEditView : Int -> String -> ListGroup.Item Msg
 strItemEditView i value =
     ListGroup.li
-        [ ListGroup.attrs [ (BlockDeselect StrList) |> onClick ] ]
+        [ ListGroup.attrs
+            [ (BlockDeselect StrList) |> onClick
+            , StrEdit |> onInput
+            ]
+        ]
         [ Input.text [ Input.value value ] ]
 
 
@@ -225,5 +287,8 @@ intItemActiveView i value =
 intItemEditView : Int -> Int -> ListGroup.Item Msg
 intItemEditView i value =
     ListGroup.li
-        [ ListGroup.attrs [ (BlockDeselect IntList) |> onClick ] ]
+        [ ListGroup.attrs
+            [ (BlockDeselect IntList) |> onClick
+            ]
+        ]
         [ Input.number [ value |> toString |> Input.value ] ]
