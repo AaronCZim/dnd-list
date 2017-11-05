@@ -1,7 +1,7 @@
 module Main exposing (..)
 
 import Html exposing (Html, text, hr, h1, h2, h3, h4, h5)
-import Html.Attributes exposing (style, id)
+import Html.Attributes exposing (style, class)
 import Html.Events exposing (..)
 import Bootstrap.CDN as CDN
 import Bootstrap.Grid as Grid
@@ -12,7 +12,8 @@ import Bootstrap.Form.Input as Input
 import DnDList
 import Keyboard exposing (KeyCode)
 import Char
-import Dom
+import Task
+import SelectDom
 import Mouse
 
 
@@ -37,6 +38,14 @@ init3Model =
         OutOfBounds
 
 
+selectStrEditor =
+    SelectDom.select ".strEditor" |> Task.attempt (\_ -> NoOp)
+
+
+selectIntEditor =
+    SelectDom.select ".intEditor" |> Task.attempt (\_ -> NoOp)
+
+
 subscriptions model =
     Keyboard.presses <| \key -> Keydown key
 
@@ -58,7 +67,8 @@ type MouseState
 
 
 type Msg
-    = Deselect
+    = NoOp
+    | Deselect
     | BlockDeselect ListType
     | Keydown KeyCode
     | Click ListType Int
@@ -80,6 +90,9 @@ type ListType
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
         Deselect ->
             case model.blockDeselect of
                 Just listType ->
@@ -168,7 +181,7 @@ update msg model =
                                 |> DnDList.update
                                     (DnDList.Editing identity i)
                       }
-                    , Cmd.none
+                    , selectStrEditor
                     )
 
                 IntList ->
@@ -179,7 +192,7 @@ update msg model =
                                 |> DnDList.update
                                     (DnDList.Editing toString i)
                       }
-                    , Cmd.none
+                    , selectIntEditor
                     )
 
         StrEdit str ->
@@ -389,8 +402,8 @@ strView : Int -> String -> ListGroup.Item Msg
 strView i value =
     ListGroup.li
         [ ListGroup.attrs
-            [ (Click StrList i) |> onClick
-            , (Edit StrList i) |> onDoubleClick
+            [ Click StrList i |> onClick
+            , Edit StrList i |> onDoubleClick
             , Enter StrList i |> onMouseEnter
             , Leave |> onMouseLeave
             , MouseMove |> Mouse.onMove
@@ -405,8 +418,8 @@ strActiveView : Int -> String -> ListGroup.Item Msg
 strActiveView i value =
     ListGroup.li
         [ ListGroup.attrs
-            [ (Click StrList i) |> onClick
-            , (Edit StrList i) |> onDoubleClick
+            [ Click StrList i |> onClick
+            , Edit StrList i |> onDoubleClick
             , Enter StrList i |> onMouseEnter
             , Leave |> onMouseLeave
             , MouseMove |> Mouse.onMove
@@ -426,18 +439,21 @@ strEditView newValue i value =
             , StrEdit |> onInput
             , Enter StrList i |> onMouseEnter
             , Leave |> onMouseLeave
-            , id "strEditor"
             ]
         ]
-        [ Input.text [ Input.value newValue ] ]
+        [ Input.text
+            [ Input.attrs [ class "strEditor" ]
+            , Input.value newValue
+            ]
+        ]
 
 
 intView : Int -> Int -> ListGroup.Item Msg
 intView i value =
     ListGroup.li
         [ ListGroup.attrs
-            [ (Click IntList i) |> onClick
-            , (Edit IntList i) |> onDoubleClick
+            [ Click IntList i |> onClick
+            , Edit IntList i |> onDoubleClick
             , Enter IntList i |> onMouseEnter
             , Leave |> onMouseLeave
             , MouseMove |> Mouse.onMove
@@ -452,8 +468,8 @@ intActiveView : Int -> Int -> ListGroup.Item Msg
 intActiveView i value =
     ListGroup.li
         [ ListGroup.attrs
-            [ (Click IntList i) |> onClick
-            , (Edit IntList i) |> onDoubleClick
+            [ Click IntList i |> onClick
+            , Edit IntList i |> onDoubleClick
             , Enter IntList i |> onMouseEnter
             , Leave |> onMouseLeave
             , MouseMove |> Mouse.onMove
@@ -469,14 +485,17 @@ intEditView : String -> Int -> Int -> ListGroup.Item Msg
 intEditView newValue i value =
     ListGroup.li
         [ ListGroup.attrs
-            [ (BlockDeselect IntList) |> onClick
+            [ BlockDeselect IntList |> onClick
             , IntEdit |> onInput
             , Enter IntList i |> onMouseEnter
             , Leave |> onMouseLeave
-            , id "intEditor"
             ]
         ]
-        [ Input.number [ newValue |> Input.value ] ]
+        [ Input.number
+            [ Input.attrs [ class "intEditor" ]
+            , newValue |> Input.value
+            ]
+        ]
 
 
 caret : ListType -> Int -> ListGroup.Item Msg
