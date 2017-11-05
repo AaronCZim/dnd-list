@@ -1,8 +1,8 @@
 module Main exposing (..)
 
 import Html exposing (Html, text, hr, h1, h2, h3, h4, h5)
-import Html.Attributes exposing (style)
-import Html.Events exposing (onClick, onDoubleClick, onInput)
+import Html.Attributes exposing (style, id)
+import Html.Events exposing (..)
 import Bootstrap.CDN as CDN
 import Bootstrap.Grid as Grid
 import Bootstrap.Grid.Col as Col
@@ -12,6 +12,8 @@ import Bootstrap.Form.Input as Input
 import DnDList
 import Keyboard exposing (KeyCode)
 import Char
+import Dom
+import Mouse
 
 
 main =
@@ -23,14 +25,6 @@ main =
         }
 
 
-init =
-    ( initModel, Cmd.none )
-
-
-initModel =
-    Model (DnDList.init [] "") (DnDList.init [] 0) Nothing
-
-
 init3 =
     ( init3Model, Cmd.none )
 
@@ -40,6 +34,7 @@ init3Model =
         (DnDList.init [ "one", "two", "three" ] "")
         (DnDList.init [ 1, 2, 3 ] 0)
         Nothing
+        OutOfBounds
 
 
 subscriptions model =
@@ -50,7 +45,16 @@ type alias Model =
     { strDnDList : DnDList.Model String String
     , intDnDList : DnDList.Model Int String
     , blockDeselect : Maybe ListType
+    , mouse : MouseState
     }
+
+
+type MouseState
+    = OutOfBounds
+    | Hover ListType Int
+    | ClickHold ListType Int
+    | Drag ListType Int
+    | DragOutOfBounds ListType
 
 
 type Msg
@@ -61,6 +65,11 @@ type Msg
     | Edit ListType Int
     | StrEdit String
     | IntEdit String
+    | Enter ListType Int
+    | Leave
+    | MouseMove Mouse.Event
+    | MouseDown Mouse.Event
+    | MouseUp Mouse.Event
 
 
 type ListType
@@ -191,6 +200,142 @@ update msg model =
             , Cmd.none
             )
 
+        Enter listType i ->
+            case model.mouse of
+                Drag _ _ ->
+                    applyDrag listType i model
+
+                DragOutOfBounds originListType ->
+                    if originListType == listType then
+                        applyDrag listType i model
+                    else
+                        ( model, Cmd.none )
+
+                _ ->
+                    ( { model | mouse = Hover listType i }, Cmd.none )
+
+        Leave ->
+            case model.mouse of
+                Drag listType i ->
+                    applyDragOutOfBounds listType model
+
+                _ ->
+                    ( { model | mouse = OutOfBounds }, Cmd.none )
+
+        MouseMove event ->
+            case model.mouse of
+                ClickHold listType i ->
+                    applyDrag listType i model
+
+                _ ->
+                    ( model, Cmd.none )
+
+        MouseDown event ->
+            case model.mouse of
+                Hover listType i ->
+                    ( { model | mouse = ClickHold listType i }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        MouseUp event ->
+            case model.mouse of
+                Drag listType i ->
+                    case listType of
+                        StrList ->
+                            ( { model
+                                | mouse = Hover listType i
+                                , strDnDList =
+                                    model.strDnDList
+                                        |> DnDList.update DnDList.Drop
+                              }
+                            , Cmd.none
+                            )
+
+                        IntList ->
+                            ( { model
+                                | mouse = Hover listType i
+                                , intDnDList =
+                                    model.intDnDList
+                                        |> DnDList.update DnDList.Drop
+                              }
+                            , Cmd.none
+                            )
+
+                DragOutOfBounds listType ->
+                    case listType of
+                        StrList ->
+                            ( { model
+                                | mouse = OutOfBounds
+                                , strDnDList =
+                                    model.strDnDList
+                                        |> DnDList.update DnDList.Drop
+                              }
+                            , Cmd.none
+                            )
+
+                        IntList ->
+                            ( { model
+                                | mouse = OutOfBounds
+                                , intDnDList =
+                                    model.intDnDList
+                                        |> DnDList.update DnDList.Drop
+                              }
+                            , Cmd.none
+                            )
+
+                ClickHold listType i ->
+                    ( { model | mouse = Hover listType i }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+applyDrag listType i model =
+    case listType of
+        StrList ->
+            ( { model
+                | mouse = Drag listType i
+                , strDnDList =
+                    model.strDnDList
+                        |> DnDList.update (DnDList.Drag i)
+              }
+            , Cmd.none
+            )
+
+        IntList ->
+            ( { model
+                | mouse = Drag listType i
+                , intDnDList =
+                    model.intDnDList
+                        |> DnDList.update (DnDList.Drag i)
+              }
+            , Cmd.none
+            )
+
+
+applyDragOutOfBounds listType model =
+    case listType of
+        StrList ->
+            ( { model
+                | mouse = DragOutOfBounds listType
+                , strDnDList =
+                    model.strDnDList
+                        |> DnDList.update DnDList.DragOutOfBounds
+              }
+            , Cmd.none
+            )
+
+        IntList ->
+            ( { model
+                | mouse = DragOutOfBounds listType
+                , intDnDList =
+                    model.intDnDList
+                        |> DnDList.update DnDList.DragOutOfBounds
+              }
+            , Cmd.none
+            )
+
 
 view : Model -> Html Msg
 view model =
@@ -205,9 +350,10 @@ view model =
                     |> Card.header []
                         [ h5 [] [ text "Text Drag and Drop List" ] ]
                     |> (DnDList.view
-                            { default = strItemView
-                            , selected = strItemActiveView
-                            , editing = strItemEditView
+                            { default = strView
+                            , selected = strActiveView
+                            , editing = strEditView
+                            , caret = caret StrList
                             }
                             model.strDnDList
                             |> Card.listGroup
@@ -219,9 +365,10 @@ view model =
                     |> Card.header []
                         [ h5 [] [ text "Number Drag and Drop List" ] ]
                     |> (DnDList.view
-                            { default = intItemView
-                            , selected = intItemActiveView
-                            , editing = intItemEditView
+                            { default = intView
+                            , selected = intActiveView
+                            , editing = intEditView
+                            , caret = caret IntList
                             }
                             model.intDnDList
                             |> Card.listGroup
@@ -234,74 +381,119 @@ view model =
         ]
 
 
-type alias CardItem =
+type alias Card =
     Card.Config Msg -> Card.Config Msg
 
 
-strItemView : Int -> String -> ListGroup.Item Msg
-strItemView i value =
+strView : Int -> String -> ListGroup.Item Msg
+strView i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (Click StrList i) |> onClick
             , (Edit StrList i) |> onDoubleClick
+            , Enter StrList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , MouseMove |> Mouse.onMove
+            , MouseDown |> Mouse.onDown
+            , MouseUp |> Mouse.onUp
             ]
         ]
         [ value |> text ]
 
 
-strItemActiveView : Int -> String -> ListGroup.Item Msg
-strItemActiveView i value =
+strActiveView : Int -> String -> ListGroup.Item Msg
+strActiveView i value =
     ListGroup.li
-        ([ ListGroup.attrs
+        [ ListGroup.attrs
             [ (Click StrList i) |> onClick
             , (Edit StrList i) |> onDoubleClick
+            , Enter StrList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , MouseMove |> Mouse.onMove
+            , MouseDown |> Mouse.onDown
+            , MouseUp |> Mouse.onUp
             ]
-         , ListGroup.active
-         ]
-        )
+        , ListGroup.active
+        ]
         [ value |> text ]
 
 
-strItemEditView : String -> Int -> String -> ListGroup.Item Msg
-strItemEditView newValue i value =
+strEditView : String -> Int -> String -> ListGroup.Item Msg
+strEditView newValue i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (BlockDeselect StrList) |> onClick
             , StrEdit |> onInput
+            , Enter StrList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , id "strEditor"
             ]
         ]
         [ Input.text [ Input.value newValue ] ]
 
 
-intItemView : Int -> Int -> ListGroup.Item Msg
-intItemView i value =
+intView : Int -> Int -> ListGroup.Item Msg
+intView i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (Click IntList i) |> onClick
             , (Edit IntList i) |> onDoubleClick
+            , Enter IntList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , MouseMove |> Mouse.onMove
+            , MouseDown |> Mouse.onDown
+            , MouseUp |> Mouse.onUp
             ]
         ]
         [ value |> toString |> text ]
 
 
-intItemActiveView : Int -> Int -> ListGroup.Item Msg
-intItemActiveView i value =
+intActiveView : Int -> Int -> ListGroup.Item Msg
+intActiveView i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (Click IntList i) |> onClick
             , (Edit IntList i) |> onDoubleClick
+            , Enter IntList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , MouseMove |> Mouse.onMove
+            , MouseDown |> Mouse.onDown
+            , MouseUp |> Mouse.onUp
             ]
         , ListGroup.active
         ]
         [ value |> toString |> text ]
 
 
-intItemEditView : String -> Int -> Int -> ListGroup.Item Msg
-intItemEditView newValue i value =
+intEditView : String -> Int -> Int -> ListGroup.Item Msg
+intEditView newValue i value =
     ListGroup.li
         [ ListGroup.attrs
             [ (BlockDeselect IntList) |> onClick
             , IntEdit |> onInput
+            , Enter IntList i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , id "intEditor"
             ]
         ]
         [ Input.number [ newValue |> Input.value ] ]
+
+
+caret : ListType -> Int -> ListGroup.Item Msg
+caret listType i =
+    ListGroup.li
+        [ ListGroup.attrs
+            [ style
+                [ ( "margin", "0" )
+                , ( "padding", "0" )
+                , ( "height", "8px" )
+                ]
+            , Enter listType i |> onMouseEnter
+            , Leave |> onMouseLeave
+            , MouseMove |> Mouse.onMove
+            , MouseDown |> Mouse.onDown
+            , MouseUp |> Mouse.onUp
+            ]
+        , ListGroup.active
+        ]
+        []
